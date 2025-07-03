@@ -1,0 +1,276 @@
+<!DOCTYPE html>
+<html lang="id">
+
+<head>
+    <meta charset="UTF-8" />
+    <title>Quiz Sambung Ayat</title>
+    <link href="https://fonts.googleapis.com/css2?family=Amiri&display=swap" rel="stylesheet">
+    <style>
+        body {
+            font-family: sans-serif;
+            max-width: 600px;
+            margin: 30px auto;
+            padding: 20px;
+        }
+
+        .arabic {
+            font-size: 24px;
+            font-family: 'Amiri', 'Scheherazade', 'Lateef', 'Traditional Arabic', serif;
+            direction: rtl;
+            text-align: right;
+            line-height: 2;
+            margin: 15px 10px;
+        }
+
+
+        .card {
+            border: 1px solid #ccc;
+            border-radius: 10px;
+            padding: 20px;
+            margin-bottom: 15px;
+            background: #f9f9f9;
+        }
+
+        .question {
+            font-size: 1.4em;
+            margin-bottom: 20px;
+            text-align: center;
+        }
+
+        .option-btn {
+            display: block;
+            width: 100%;
+            margin: 10px 0;
+            padding: 10px;
+            font-size: 1.1em;
+            border-radius: 8px;
+            border: 1px solid #aaa;
+            background: white;
+            cursor: pointer;
+            transition: background 0.2s;
+        }
+
+        .option-btn:hover {
+            background: #eee;
+        }
+
+        .feedback {
+            font-weight: bold;
+            margin-top: 15px;
+            text-align: center;
+        }
+
+        #setup {
+            margin-bottom: 30px;
+        }
+
+        select,
+        input[type="number"],
+        button {
+            padding: 8px;
+            font-size: 1em;
+            margin: 5px 0;
+        }
+
+        #controls {
+            margin-top: 20px;
+            text-align: center;
+        }
+
+        #controls button {
+            margin: 5px;
+        }
+    </style>
+
+</head>
+
+<body>
+
+    <div id="setup">
+        <h2>Quiz Sambung Ayat Al-Qur'an</h2>
+        <label>Pilih Surat:
+            <select id="surat"></select>
+        </label><br /><br />
+
+        <label>Ayat Awal:
+            <input type="number" id="ayatAwal" min="1" />
+        </label><br /><br />
+
+        <label>Ayat Akhir:
+            <input type="number" id="ayatAkhir" min="1" />
+        </label><br /><br />
+
+        <button onclick="mulaiKuis()">Mulai Kuis</button>
+    </div>
+
+    <div id="quiz" class="card" style="display: none;">
+        <div class="question" id="teksAyat"></div>
+        <div id="opsiJawaban"></div>
+        <div class="feedback" id="feedback"></div>
+        <div id="controls" style="display: none;">
+            <button onclick="restartKuis()">🔁 Restart</button>
+            <button onclick="keluarKuis()">🔙 Keluar</button>
+        </div>
+    </div>
+
+    <script>
+        const suratSelect = document.getElementById('surat');
+        const ayatAwalInput = document.getElementById('ayatAwal');
+        const ayatAkhirInput = document.getElementById('ayatAkhir');
+        const teksAyat = document.getElementById('teksAyat');
+        const opsiJawaban = document.getElementById('opsiJawaban');
+        const feedback = document.getElementById('feedback');
+        const quizDiv = document.getElementById('quiz');
+        const controlsDiv = document.getElementById('controls');
+        const setupDiv = document.getElementById('setup');
+
+        let ayatDalamSurat = [];
+        let soalAcak = [];
+        let subsetAyat = [];
+        let currentIndex = 0;
+        let score = 0;
+        let currentSurat = 1;
+        let currentAwal = 1;
+        let currentAkhir = 7;
+
+        async function loadDaftarSurat() {
+            const res = await fetch("https://equran.id/api/v2/surat");
+            const data = await res.json();
+            data.data.forEach(surat => {
+                const option = document.createElement("option");
+                option.value = surat.nomor;
+                option.textContent = `${surat.nomor}. ${surat.namaLatin} (${surat.jumlahAyat} ayat)`;
+                suratSelect.appendChild(option);
+            });
+        }
+
+        suratSelect.addEventListener("change", async () => {
+            currentSurat = parseInt(suratSelect.value);
+            const res = await fetch(`https://equran.id/api/v2/surat/${currentSurat}`);
+            const data = await res.json();
+            ayatDalamSurat = data.data.ayat.map(a => ({
+                ayat: a.nomorAyat,
+                teks_arab: a.teksArab
+            }));
+            const jumlahAyat = ayatDalamSurat.length;
+            ayatAwalInput.max = jumlahAyat - 1;
+            ayatAkhirInput.max = jumlahAyat;
+            ayatAwalInput.min = 1;
+            ayatAkhirInput.min = 2;
+            ayatAwalInput.value = 1;
+            ayatAkhirInput.value = jumlahAyat;
+        });
+
+        function acakArray(array) {
+            for (let i = array.length - 1; i > 0; i--) {
+                const j = Math.floor(Math.random() * (i + 1));
+                [array[i], array[j]] = [array[j], array[i]];
+            }
+            return array;
+        }
+
+        function randomAntara(min, max) {
+            return Math.floor(Math.random() * (max - min + 1)) + min;
+        }
+
+        function mulaiKuis() {
+            currentAwal = parseInt(ayatAwalInput.value);
+            currentAkhir = parseInt(ayatAkhirInput.value);
+
+            if (currentAwal >= currentAkhir || currentAwal < 1 || currentAkhir > ayatDalamSurat.length) {
+                alert("Range ayat tidak valid!");
+                return;
+            }
+
+            subsetAyat = ayatDalamSurat.filter(a => a.ayat >= currentAwal && a.ayat <= currentAkhir);
+            const soal = subsetAyat.slice(0, subsetAyat.length - 1);
+            soalAcak = acakArray([...soal]);
+            currentIndex = 0;
+            score = 0;
+
+            setupDiv.style.display = 'none';
+            quizDiv.style.display = 'block';
+            controlsDiv.style.display = 'none';
+            tampilkanSoal();
+        }
+
+        function tampilkanSoal() {
+            if (currentIndex >= soalAcak.length) {
+                teksAyat.textContent = `🎉 Kuis selesai! Skor Anda: ${score} dari ${soalAcak.length}`;
+                opsiJawaban.innerHTML = "";
+                feedback.textContent = "";
+                controlsDiv.style.display = 'block';
+                return;
+            }
+
+            feedback.textContent = "";
+            const current = soalAcak[currentIndex];
+            const next = subsetAyat.find(a => a.ayat === current.ayat + 1);
+            const nomorSurat = suratSelect.options[suratSelect.selectedIndex].textContent;
+            const namaSurat = nomorSurat.split('. ')[1].split(' (')[0]; // Ambil nama latin surat
+
+            teksAyat.innerHTML = `
+  <p style="font-size:20px; text-align: center;">
+    Apa lanjutan dari <u>ayat ke-${current.ayat}</u> surat <u>${namaSurat}</u> berikut ini?
+  </p>
+  <div class="arabic">${current.teks_arab}</div>
+`;
+
+
+            let pilihanSalah = [];
+            while (pilihanSalah.length < 2) {
+                let kandidat = ayatDalamSurat[randomAntara(0, ayatDalamSurat.length - 1)];
+                if (
+                    kandidat.teks_arab !== next.teks_arab &&
+                    kandidat.teks_arab !== current.teks_arab &&
+                    !pilihanSalah.includes(kandidat.teks_arab)
+                ) {
+                    pilihanSalah.push(kandidat.teks_arab);
+                }
+            }
+
+            const semuaPilihan = acakArray([next.teks_arab, ...pilihanSalah]);
+            opsiJawaban.innerHTML = "";
+            semuaPilihan.forEach(teks => {
+                const btn = document.createElement("button");
+                btn.className = "option-btn";
+                btn.innerHTML = `<div class="arabic">${teks}</div>`;
+
+                btn.onclick = () => periksaJawaban(teks, next.teks_arab);
+                opsiJawaban.appendChild(btn);
+            });
+        }
+
+        function periksaJawaban(pilihan, jawabanBenar) {
+            if (pilihan === jawabanBenar) {
+                feedback.textContent = "✅ Benar!";
+                score++;
+            } else {
+                feedback.textContent = `❌ Salah! Jawaban benar:\n${jawabanBenar}`;
+            }
+
+            setTimeout(() => {
+                currentIndex++;
+                tampilkanSoal();
+            }, 1500);
+        }
+
+        function restartKuis() {
+            currentIndex = 0;
+            score = 0;
+            soalAcak = acakArray(subsetAyat.slice(0, subsetAyat.length - 1));
+            controlsDiv.style.display = 'none';
+            tampilkanSoal();
+        }
+
+        function keluarKuis() {
+            quizDiv.style.display = 'none';
+            setupDiv.style.display = 'block';
+            feedback.textContent = "";
+        }
+
+        loadDaftarSurat();
+    </script>
+</body>
+
+</html>
